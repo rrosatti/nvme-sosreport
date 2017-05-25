@@ -46,13 +46,11 @@ class RedHatNvmePlugin(NvmePlugin, RedHatPlugin):
 	# check if nvme-cli package is installed
 	ret = os.system("rpm -qa | grep nvme-cli")
 	if ret == 0:  
+	    self.add_cmd_output("nvme list")
 	    for dev in self.devices:  
-	    	self.add_cmd_output([
-	        	"nvme list",
-	 		"nvme fw-log /dev/%s" % dev,
-			"nvme list-ctrl /dev/%s" % dev,
-			"nvme list-ns /dev/%s" % dev], root_symlink="nvme");
-
+		self.add_cmd_output("nvme list-ns /dev/%s" % dev, suggest_filename="list-ns.%s" % dev)
+		self.add_cmd_output("nvme fw-log /dev/%s" % dev, suggest_filename="fw-log.%s" % dev)
+		self.add_cmd_output("nvme list-ctrl /dev/%s" % dev, suggest_filename="list-ctrl.%s" % dev)		
 
 class DebianNvmePlugin(NvmePlugin, DebianPlugin):
 
