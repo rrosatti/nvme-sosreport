@@ -8,9 +8,9 @@ class NvmePlugin(Plugin):
     """Collect config and system information about NVMe devices"""
 
     plugin_name = "nvme"
-    #packages = ('nvme-cli',) 
     devices = [] 
 
+    # get the files for every nvme device
     def get_spec(self):  
         i = 0
 	spec = []
@@ -43,6 +43,7 @@ class RedHatNvmePlugin(NvmePlugin, RedHatPlugin):
 
     def setup(self):
         super(RedHatNvmePlugin, self).setup()
+	# check if nvme-cli package is installed
 	ret = os.system("rpm -qa | grep nvme-cli")
 	if ret == 0:  
 	    for dev in self.devices:  
@@ -57,6 +58,12 @@ class DebianNvmePlugin(NvmePlugin, DebianPlugin):
 
     def setup(self):
         super(DebianPlugin, self).setup()	
+	# check if nvme-cli package is installed
 	ret = os.system("dpkg -s nvme-cli")
 	if ret == 0:
-	    self.add_cmd_output("nvme list", root_symlink="nvme");
+	    self.add_cmd_output([
+	       	"nvme list",
+	 	"nvme fw-log /dev/%s" % dev,
+		"nvme list-ctrl /dev/%s" % dev,
+		"nvme list-ns /dev/%s" % dev], root_symlink="nvme");
+
