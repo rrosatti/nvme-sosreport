@@ -4,7 +4,7 @@
 from sos.plugins import Plugin, RedHatPlugin, DebianPlugin
 import os, subprocess
 
-class NvmePlugin(Plugin):
+class NvmePlugin(Plugin, RedHatPlugin, DebianPlugin):
     """Collect config and system information about NVMe devices"""
 
     plugin_name = "nvme"
@@ -17,20 +17,21 @@ class NvmePlugin(Plugin):
 	while os.path.isdir('/sys/block/nvme%dn1' % i):
 	    self.devices.append("nvme%dn1" % i)
     	    path = "/sys/block/nvme%dn1" % i
-    	    spec.extend([
-        	"%s/size" % path,
-        	"%s/dev" % path,
-        	"%s/wwid" % path,
-        	"%s/queue/hw_sector_size" % path,
-        	"%s/queue/logical_block_size" % path,
-        	"%s/queue/max_hw_sectors_kb" % path,
-        	"%s/queue/max_segments" % path,
-        	"%s/queue/max_segment_size" % path,
-        	"%s/queue/nr_requests" % path,
-        	"%s/queue/physical_block_size" % path,
-        	"%s/device/firmware_rev" % path,
-        	"%s/device/model" % path,
-        	"%s/device/serial" % path])
+	    temp = [
+                "%s/size" % path,
+                "%s/dev" % path,
+                "%s/wwid" % path,
+                "%s/queue/hw_sector_size" % path,
+                "%s/queue/logical_block_size" % path,
+                "%s/queue/max_hw_sectors_kb" % path,
+                "%s/queue/max_segments" % path,
+                "%s/queue/max_segment_size" % path,
+                "%s/queue/nr_requests" % path,
+                "%s/queue/physical_block_size" % path,
+                "%s/device/firmware_rev" % path,
+                "%s/device/model" % path,
+                "%s/device/serial" % path]
+	    spec = spec + temp
     	    i += 1
         return spec
 
@@ -38,55 +39,32 @@ class NvmePlugin(Plugin):
         spec = self.get_spec()
 	self.add_copy_spec(spec)
 
-	
-class RedHatNvmePlugin(NvmePlugin, RedHatPlugin):
-
-    def setup(self):
-        super(RedHatNvmePlugin, self).setup()
 	# check if nvme-cli package is installed
-	ret = os.system("rpm -qa | grep nvme-cli")
-	if ret == 0:  
+	if self.is_installed("nvme-cli"):
 	    self.add_cmd_output("nvme list")
-	    for dev in self.devices:  
-		self.add_cmd_output("nvme list-ns /dev/%s" % dev, suggest_filename="list-ns.%s" % dev)
-		self.add_cmd_output("nvme fw-log /dev/%s" % dev, suggest_filename="fw-log.%s" % dev)
-		self.add_cmd_output("nvme list-ctrl /dev/%s" % dev, suggest_filename="list-ctrl.%s" % dev)		
-		self.add_cmd_output("nvme id-ctrl -H /dev/%s" % dev, suggest_filename="id-ctrl.%s" % dev)
-		self.add_cmd_output("nvme id-ns -H /dev/%s" % dev, suggest_filename="id-ns.%s" % dev)
-		self.add_cmd_output("nvme smart-log /dev/%s" % dev, suggest_filename="smart-log.%s" % dev)
-		self.add_cmd_output("nvme error-log /dev/%s" % dev, suggest_filename="error-log.%s" % dev)
-		self.add_cmd_output("sh -c \"lsblk | grep %s | awk '{ print $4 }'\"" % dev, suggest_filename="block-size.%s" % dev)
-		
-		opal = subprocess.check_output("cat /proc/cpuinfo | grep firmware | grep OPAL | wc -l", shell=True)
-		opal = int(opal)
-		if opal == 1:
-		    grep_op = "mass-storage"
-		else:
-		    grep_op = "pci"
+            for dev in self.devices:
+                self.add_cmd_output("nvme list-ns /dev/%s" % dev, suggest_filename="list-ns.%s" % dev)
+                self.add_cmd_output("nvme fw-log /dev/%s" % dev, suggest_filename="fw-log.%s" % dev)
+                self.add_cmd_output("nvme list-ctrl /dev/%s" % dev, suggest_filename="list-ctrl.%s" % dev)
+                self.add_cmd_output("nvme id-ctrl -H /dev/%s" % dev, suggest_filename="id-ctrl.%s" % dev)
+                self.add_cmd_output("nvme id-ns -H /dev/%s" % dev, suggest_filename="id-ns.%s" % dev)
+                self.add_cmd_output("nvme smart-log /dev/%s" % dev, suggest_filename="smart-log.%s" % dev)
+                self.add_cmd_output("nvme error-log /dev/%s" % dev, suggest_filename="error-log.%s" % dev)
+                self.add_cmd_output("sh -c \"lsblk | grep %s | awk '{ print $4 }'\"" % dev, suggest_filename="block-size.%s" % dev)
+
+                opal = subprocess.check_output("cat /proc/cpuinfo | grep firmware | grep OPAL | wc -l", shell=True)
+                opal = int(opal)
+                if opal == 1:
+                    grep_op = "mass-storage"
+                else:
+                    grep_op = "pci"
+
+                # get info about slot location and pci location
+                slot = subprocess.check_output("lscfg -vl %s | grep nvme | grep %s | awk '{ print $4 }'" % (dev[0:-2], grep_op), shell=True).strip()
+                pci = subprocess.check_output("lscfg -vl %s | grep nvme | grep %s | awk '{ print $1 }'" % (dev[0:-2], grep_op), shell=True).strip()
+
+                self.add_cmd_output("sh -c \"lscfg -vl %s | grep nvme | grep %s | awk '{ print $4 }'\"" % (dev[0:-2], grep_op), suggest_filename="slot_loc.%s" % dev)
+                self.add_cmd_output("sh -c \"lscfg -vl %s | grep nvme | grep %s | awk '{ print $1 }'\"" % (dev[0:-2], grep_op), suggest_filename="pci_loc.%s" % dev)
+                self.add_cmd_output("sh -c \"lspci -vs %s | grep 'Non-Volatile memory controller' | cut -c 46-\"" % pci.strip(), suggest_filename="pci_vdid.%s" % dev)
+                self.add_cmd_output("sh -c \"lspci -vs %s | grep Subsystem | cut -c 13-\"" % pci.strip(), suggest_filename="pci_ssid.%s" % dev)
 	
-		# get info about slot location and pci location
-		slot = subprocess.check_output("lscfg -vl %s | grep nvme | grep %s | awk '{ print $4 }'" % (dev[0:-2], grep_op), shell=True).strip()
-		pci = subprocess.check_output("lscfg -vl %s | grep nvme | grep %s | awk '{ print $1 }'" % (dev[0:-2], grep_op), shell=True).strip()
-		
-		self.add_cmd_output("sh -c \"lscfg -vl %s | grep nvme | grep %s | awk '{ print $4 }'\"" % (dev[0:-2], grep_op), suggest_filename="slot_loc.%s" % dev)
-		self.add_cmd_output("sh -c \"lscfg -vl %s | grep nvme | grep %s | awk '{ print $1 }'\"" % (dev[0:-2], grep_op), suggest_filename="pci_loc.%s" % dev)
-		self.add_cmd_output("sh -c \"lspci -vs %s | grep 'Non-Volatile memory controller' | cut -c 46-\"" % pci.strip(), suggest_filename="pci_vdid.%s" % dev)
-		self.add_cmd_output("sh -c \"lspci -vs %s | grep Subsystem | cut -c 13-\"" % pci.strip(), suggest_filename="pci_ssid.%s" % dev)
-	
-	else:	    
-	    self.add_string_as_file("The nvme-cli tool is not installed. If you want more configuration details and system information about NVMe devices, you should install it.\n", "nvme-cli_not_installed")	
-
-
-class DebianNvmePlugin(NvmePlugin, DebianPlugin):
-
-    def setup(self):
-        super(DebianPlugin, self).setup()	
-	# check if nvme-cli package is installed
-	ret = os.system("dpkg -s nvme-cli")
-	if ret == 0:
-	    self.add_cmd_output([
-	       	"nvme list",
-	 	"nvme fw-log /dev/%s" % dev,
-		"nvme list-ctrl /dev/%s" % dev,
-		"nvme list-ns /dev/%s" % dev], root_symlink="nvme");
-
