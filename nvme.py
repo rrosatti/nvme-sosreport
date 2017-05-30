@@ -53,17 +53,8 @@ class NvmePlugin(Plugin, RedHatPlugin, DebianPlugin):
 	    for m in mq_files:
 		self.add_copy_spec(m)	
 
-	    irqs = subprocess.check_output("cat /proc/interrupts | grep nvme%d | awk '{ print substr($1, 1, length($1)-1) }'"
-		% i, shell=True).rstrip()
-	    irqs = irqs.splitlines()
-	    for irq in irqs:
-    		irq_files = subprocess.check_output("find /proc/irq/%s/ -type f" % irq, shell=True).rstrip()
-    		irq_files = irq_files.splitlines()
-    		for irqfile in irq_files:
-        	    self.add_copy_spec(irqfile)
-
-
 	    i += 1
+
         return spec
 
     def setup(self):
