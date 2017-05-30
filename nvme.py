@@ -1,5 +1,16 @@
-# -*- coding: utf8 -*-
-# This is a sosreport plugin to collect configuration details and system information about NVMe devices
+### This program is free software; you can redistribute it and/or modify
+## it under the terms of the GNU General Public License as published by
+## the Free Software Foundation; either version 2 of the License, or
+## (at your option) any later version.
+
+## This program is distributed in the hope that it will be useful,
+## but WITHOUT ANY WARRANTY; without even the implied warranty of
+## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+## GNU General Public License for more details.
+
+## You should have received a copy of the GNU General Public License
+## along with this program; if not, write to the Free Software
+## Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
 from sos.plugins import Plugin, RedHatPlugin, DebianPlugin
 import os, subprocess
@@ -16,28 +27,48 @@ class NvmePlugin(Plugin, RedHatPlugin, DebianPlugin):
 	spec = []
 	while os.path.isdir('/sys/block/nvme%dn1' % i):
 	    self.devices.append("nvme%dn1" % i)
-    	    path = "/sys/block/nvme%dn1" % i
-	    temp = [
-                "%s/size" % path,
-                "%s/dev" % path,
-                "%s/wwid" % path,
-                "%s/queue/hw_sector_size" % path,
-                "%s/queue/logical_block_size" % path,
-                "%s/queue/max_hw_sectors_kb" % path,
-                "%s/queue/max_segments" % path,
-                "%s/queue/max_segment_size" % path,
-                "%s/queue/nr_requests" % path,
-                "%s/queue/physical_block_size" % path,
-                "%s/device/firmware_rev" % path,
-                "%s/device/model" % path,
-                "%s/device/serial" % path]
-	    spec = spec + temp
-    	    i += 1
+	    
+	    queue_files = subprocess.check_output("ls -1 /sys/block/nvme%dn1/queue/*" % i, shell=True).rstrip()
+	    queue_files = queue_files.splitlines()
+	    for q in queue_files:
+		self.add_copy_spec(q)
+
+	    device_files = subprocess.check_output("find /sys/block/nvme%dn1/device/ -maxdepth 1 -type f" % i, shell=True).rstrip()
+	    device_files = device_files.splitlines()
+	    for d in device_files:
+		self.add_copy_spec(d)
+
+	    general_files = subprocess.check_output("find /sys/block/nvme%dn1/ -maxdepth 1 -type f" % i, shell=True).rstrip()
+	    general_files = general_files.splitlines()
+	    for g in general_files:
+		self.add_copy_spec(g)
+	
+	    integrity_files = subprocess.check_output("ls -1 /sys/block/nvme%dn1/integrity/*" % i, shell=True).rstrip()
+	    integrity_files = integrity_files.splitlines()
+	    for ing in integrity_files:
+		self.add_copy_spec(ing)
+	 
+	    mq_files = subprocess.check_output("find /sys/block/nvme%dn1/mq/ -type f" % i, shell=True).rstrip()
+	    mq_files = mq_files.splitlines()
+	    for m in mq_files:
+		self.add_copy_spec(m)	
+
+	    irqs = subprocess.check_output("cat /proc/interrupts | grep nvme%d | awk '{ print substr($1, 1, length($1)-1) }'"
+		% i, shell=True).rstrip()
+	    irqs = irqs.splitlines()
+	    for irq in irqs:
+    		irq_files = subprocess.check_output("find /proc/irq/%s/ -type f" % irq, shell=True).rstrip()
+    		irq_files = irq_files.splitlines()
+    		for irqfile in irq_files:
+        	    self.add_copy_spec(irqfile)
+
+
+	    i += 1
         return spec
 
     def setup(self):
         spec = self.get_spec()
-	self.add_copy_spec(spec)
+	#self.add_copy_spec(spec)
 
 	# check if nvme-cli package is installed
 	if self.is_installed("nvme-cli"):
@@ -60,11 +91,23 @@ class NvmePlugin(Plugin, RedHatPlugin, DebianPlugin):
                     grep_op = "pci"
 
                 # get info about slot location and pci location
-                slot = subprocess.check_output("lscfg -vl %s | grep nvme | grep %s | awk '{ print $4 }'" % (dev[0:-2], grep_op), shell=True).strip()
-                pci = subprocess.check_output("lscfg -vl %s | grep nvme | grep %s | awk '{ print $1 }'" % (dev[0:-2], grep_op), shell=True).strip()
+                slot = subprocess.check_output("lscfg -vl %s | grep nvme | grep %s | awk '{ print $4 }'"
+			% (dev[0:-2], grep_op), shell=True).strip()
+                pci = subprocess.check_output("lscfg -vl %s | grep nvme | grep %s | awk '{ print $1 }'" 
+			% (dev[0:-2], grep_op), shell=True).strip()
 
-                self.add_cmd_output("sh -c \"lscfg -vl %s | grep nvme | grep %s | awk '{ print $4 }'\"" % (dev[0:-2], grep_op), suggest_filename="slot_loc.%s" % dev)
-                self.add_cmd_output("sh -c \"lscfg -vl %s | grep nvme | grep %s | awk '{ print $1 }'\"" % (dev[0:-2], grep_op), suggest_filename="pci_loc.%s" % dev)
-                self.add_cmd_output("sh -c \"lspci -vs %s | grep 'Non-Volatile memory controller' | cut -c 46-\"" % pci.strip(), suggest_filename="pci_vdid.%s" % dev)
-                self.add_cmd_output("sh -c \"lspci -vs %s | grep Subsystem | cut -c 13-\"" % pci.strip(), suggest_filename="pci_ssid.%s" % dev)
-	
+                self.add_cmd_output("sh -c \"lscfg -vl %s | grep nvme | grep %s | awk '{ print $4 }'\"" 
+			% (dev[0:-2], grep_op), suggest_filename="slot_loc.%s" % dev)
+                self.add_cmd_output("sh -c \"lscfg -vl %s | grep nvme | grep %s | awk '{ print $1 }'\"" 
+			% (dev[0:-2], grep_op), suggest_filename="pci_loc.%s" % dev)
+                self.add_cmd_output("sh -c \"lspci -vs %s | grep 'Non-Volatile memory controller' | cut -c 46-\"" 
+			% pci, suggest_filename="pci_vdid.%s" % dev)
+                self.add_cmd_output("sh -c \"lspci -vs %s | grep Subsystem | cut -c 13-\"" 
+			% pci, suggest_filename="pci_ssid.%s" % dev)
+		self.add_cmd_output("sh -c \"lspci -vvs %s | grep '\[PN\]' | awk '{ print $4 }'\"" 
+			% pci, suggest_filename="part-number.%s" % dev)
+		self.add_cmd_output("sh -c \"lspci -vvs %s | grep '\[EC\]' | awk '{ print $4 }'\"" 
+			% pci, suggest_filename="engineering-changes.%s" % dev)		
+	else:
+	    self.add_string_as_file(("The nvme-cli tool is not installed. If you want more configuration details and" 
+	        " system information about NVMe devices, you should install it.\n"), "nvme-cli_not_installed")	
