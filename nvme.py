@@ -28,52 +28,6 @@ class Nvme(Plugin, RedHatPlugin, DebianPlugin, UbuntuPlugin):
                     dev.startswith('nvme') ]
         return devices
 
-    def get_sysblock_info(self):
-        """
-        Loop through all NVMe devices in /sys/block/<nvme-device>/
-        and get the files inside queue/, device/, integrity/ and mq/
-        """
-
-        devices = self.get_nvme_devices()
-        for dev in devices:
-            queue_files = subprocess.check_output(
-                    "ls -1 /sys/block/%s/queue/*" % dev,
-                    shell=True).rstrip()
-
-            # in python 3.3+ prefix b' is not ignored
-            # bytes.decode() get rid of it
-            queue_files = bytes.decode(queue_files)
-            queue_files = queue_files.splitlines()
-            self.add_copy_spec(queue_files)
-
-            device_files = subprocess.check_output(
-                    "find /sys/block/%s/device/ -maxdepth 1 -type f" % dev,
-                    shell=True).rstrip()
-            device_files = bytes.decode(device_files)
-            device_files = device_files.splitlines()
-            self.add_copy_spec(queue_files)
-
-            general_files = subprocess.check_output(
-                    "find /sys/block/%s/ -maxdepth 1 -type f" % dev,
-                    shell=True).rstrip()
-            general_files = bytes.decode(general_files)
-            general_files = general_files.splitlines()
-            self.add_copy_spec(general_files)
-
-            integrity_files = subprocess.check_output(
-                    "ls -1 /sys/block/%s/integrity/*" % dev,
-                    shell=True).rstrip()
-            integrity_files = bytes.decode(integrity_files)
-            integrity_files = integrity_files.splitlines()
-            self.add_copy_spec(integrity_files)
-
-            mq_files = subprocess.check_output(
-                    "find /sys/block/%s/mq/ -type f" % dev,
-                    shell=True).rstrip()
-            mq_files = bytes.decode(mq_files)
-            mq_files = mq_files.splitlines()
-            self.add_copy_spec(mq_files)
-
     def check_fw_mode(self, cat_cpuinfo_out):
         """ Receives the output from 'cat /proc/cpuinfo' and check whether the firmware
         mode is OPAL or not """
@@ -103,8 +57,6 @@ class Nvme(Plugin, RedHatPlugin, DebianPlugin, UbuntuPlugin):
         return []
 
     def setup(self):
-        self.get_sysblock_info()
-
         # check if the firmware mode is OPAL
         cat_cpuinfo = self.call_ext_prog("cat /proc/cpuinfo")
         if cat_cpuinfo['status'] == 0:
