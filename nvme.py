@@ -22,7 +22,11 @@ class Nvme(Plugin, RedHatPlugin, DebianPlugin, UbuntuPlugin):
 
     plugin_name = "nvme"
     packages = ('nvme-cli',)
-    devices = []
+
+    def get_nvme_devices(self):
+        devices = [dev for dev in os.listdir('/sys/block/') if \
+                    dev.startswith('nvme') ]
+        return devices
 
     def copy_spec(self):
         """
@@ -30,9 +34,8 @@ class Nvme(Plugin, RedHatPlugin, DebianPlugin, UbuntuPlugin):
         and get the files inside queue/, device/, integrity/ and mq/
         """
 
-        i = 0
-        self.devices = [dev for dev in os.listdir('/sys/block/') if dev.startswith('nvme')]
-        for dev in self.devices:
+        devices = self.get_nvme_devices()
+        for dev in devices:
             queue_files = subprocess.check_output(
                     "ls -1 /sys/block/%s/queue/*" % dev,
                     shell=True).rstrip()
@@ -71,45 +74,67 @@ class Nvme(Plugin, RedHatPlugin, DebianPlugin, UbuntuPlugin):
             mq_files = mq_files.splitlines()
             self.add_copy_spec(mq_files)
 
+    def check_fw_mode(self, cat_cpuinfo_out):
+        """ Receives the output from 'cat /proc/cpuinfo' and check whether the firmware
+        mode is OPAL or not """
+        for line in cat_cpuinfo_out.splitlines():
+            if "firmware" in line:
+                if "OPAL" in line:
+                    return True
+                else:
+                    return False
+        return False
+
+    def get_block_size(self, cmd_lsblk_out, dev):
+        """ Receives the output from 'lsblk' and get the block size for the
+        specified device"""
+        for line in cmd_lsblk_out.splitlines():
+            if dev in line:
+                return line.split()[3]
+        return
+
+    def get_pci_slot_location(self, cmd_lscfg_out, op):
+        """ Receives the output from 'lscfg -vl <device-name>' and get the line
+        corresponding to 'mass-storage' or 'pci', depending of the firmware
+        mode """
+        for line in cmd_lscfg_out.splitlines():
+            if op in line:
+                return line.split()
+        return []
+
     def setup(self):
         self.copy_spec()
 
-        for dev in self.devices:
+        # check if the firmware mode is OPAL
+        cat_cpuinfo = self.call_ext_prog("cat /proc/cpuinfo")
+        if cat_cpuinfo['status'] == 0:
+            is_opal = self.check_fw_mode(cat_cpuinfo['output'])
+            if is_opal:
+                op = "mass-storage"
+            else:
+                op = "pci"
+
+        for dev in self.get_nvme_devices():
             # get block size
-            self.add_cmd_output(
-                    "sh -c \"lsblk | grep %s | awk '{ print $4 }'\"" % dev,
-                    suggest_filename="block-size.%s" % dev)
-
-            # check if the firmware mode is OPAL
-            """opal = subprocess.check_output(
-                    "cat /proc/cpuinfo | grep firmware | grep OPAL | wc -l",
-                    shell=True)
-            opal = int(opal)
-            if opal == 1:
-                grep_op = "mass-storage"
-            else:
-                grep_op = "pci"""
-
-            op = self.get_cmd_output_now(
-                    "cat /proc/cpuinfo | grep firmware | grep OPAL | wc -l")
-            
-            if op:
-                opal = open(op, 'r').read().splitlines()
-                if opal == 1:
-                    grep_op = "mass-storage"
-                else:
-                    grep_op = "pci"
-            else:
-                print "test"
+            cmd_lsblk = self.call_ext_prog("lsblk")
+            if cmd_lsblk['status'] == 0:
+                blk_size = self.get_block_size(cmd_lsblk['output'], dev)
+                self.add_string_as_file(blk_size, "block-size.%s" % dev)
 
             # get info about slot location and pci location
-            """slot = subprocess.check_output(
-                    "lscfg -vl %s | grep nvme | grep %s | awk '{ print $4 }'"
-                    % (dev[0:-2], grep_op), shell=True).strip()
-            pci = subprocess.check_output(
-                    "lscfg -vl %s | grep nvme | grep %s | awk '{ print $1 }'"
-                    % (dev[0:-2], grep_op), shell=True).strip()"""
+            cmd_lscfg = self.call_ext_prog("lscfg -vl %s" % dev[0:-2])
+            if cmd_lscfg['status'] == 0:
+                pci_and_slot_location = self.get_pci_slot_location(
+                                                            cmd_lscfg['output'],
+                                                            op)
+                
+                if pci_and_slot_location:
+                    pci_loc = pci_and_slot_location[0]
+                    slot_loc = pci_and_slot_location[3]
+                    self.add_string_as_file(pci_loc, "pci_loc.%s" % dev)
+                    self.add_string_as_file(slot_loc, "slot_loc.%s" % dev)
 
+            # runs nvme-cli commands
             self.add_cmd_output([
                                 "nvme list",
                                 "nvme list-ns /dev/%s" % dev,
@@ -120,12 +145,3 @@ class Nvme(Plugin, RedHatPlugin, DebianPlugin, UbuntuPlugin):
                                 "nvme smart-log /dev/%s" % dev,
                                 "nvme error-log /dev/%s" % dev,
                                 "nvme show-regs /dev/%s" % dev])
-            """
-            self.add_cmd_output("nvme list-ns /dev/%s" % dev)
-            self.add_cmd_output("nvme fw-log /dev/%s" % dev)
-            self.add_cmd_output("nvme list-ctrl /dev/%s" % dev)
-            self.add_cmd_output("nvme id-ctrl -H /dev/%s" % dev)
-            self.add_cmd_output("nvme id-ns -H /dev/%s" % dev)
-            self.add_cmd_output("nvme smart-log /dev/%s" % dev)
-            self.add_cmd_output("nvme error-log /dev/%s" % dev)
-            self.add_cmd_output("nvme show-regs /dev/%s" % dev)"""
