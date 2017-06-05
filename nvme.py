@@ -28,7 +28,7 @@ class Nvme(Plugin, RedHatPlugin, DebianPlugin, UbuntuPlugin):
                     dev.startswith('nvme') ]
         return devices
 
-    def copy_spec(self):
+    def get_sysblock_info(self):
         """
         Loop through all NVMe devices in /sys/block/<nvme-device>/
         and get the files inside queue/, device/, integrity/ and mq/
@@ -103,7 +103,7 @@ class Nvme(Plugin, RedHatPlugin, DebianPlugin, UbuntuPlugin):
         return []
 
     def setup(self):
-        self.copy_spec()
+        self.get_sysblock_info()
 
         # check if the firmware mode is OPAL
         cat_cpuinfo = self.call_ext_prog("cat /proc/cpuinfo")
